@@ -11,7 +11,7 @@ DELTA = 1e-8
 
 ## everything in 1-dimension now
 
-def reparam(w, A, B, C, L, P, indep=False):
+def reparam(w, params, indep=False):
     '''
     mapping w->z, K->K
     :param w: N x K
@@ -20,12 +20,14 @@ def reparam(w, A, B, C, L, P, indep=False):
     '''
     if w.ndim==1:
         w_ = w.reshape((1,len(w)))
-        A_ = np.exp(A)
-        L_ = np.exp(L)
-        components = A_*( 1./( 1+np.exp(-L_*(w_.T-B)) ) + C )
+        A_ = np.exp(params['A'])
+        L_ = np.exp(params['L'])
+        B_ = params['B']
+        C_ = params['C']
+        components = A_*( 1./( 1+np.exp(-L_*(w_.T-B_)) ) + C_ )
         if indep:
             return components
-        return np.sum( components*P, 1 )
+        return np.sum( components*params['P'], 1 )
     else:
         pass
 
@@ -54,24 +56,24 @@ def params_init(num_sig, mode='linear'):
         pass
     A = np.log(A)
     L = np.log(L)
-    return A,B,C,L,P
+    return {'A':A,'B':B,'C':C,'L':L,'P':P}
 
 
 
-def log_qz( w, A,B,C,L,P,log_qw ):
+def log_qz( w, params,log_qw ):
     if w.ndim==1:
-        dfdw = df_dw(w,A,B,C,L,P)
-        out = log_qw(w) - np.log(np.abs(dfdw))
+        dzdw = df_dw(w,params)
+        out = log_qw(w) - np.log(np.abs(dzdw))
         return out
     else:
         pass
 
-def plot_qz( A,B,C,L,P,log_qw, target=None, testing=False):
+def plot_qz( params,log_qw, target=None, testing=False):
     ## 1-dimension case
     w_samples = utils.spacing_gen(1000,-1,+1,dim=1)
 
-    z_probs = np.exp( log_q(w_samples, A,B,C,L,P,log_qw) )
-    z_samples = reparam(w_samples,A,B,C,L,P)
+    z_probs = np.exp( log_qz(w_samples, params,log_qw) )
+    z_samples = reparam(w_samples,params)
     if testing:
         idx = np.argsort(z_samples)
         z_samples = z_samples[idx]
@@ -98,17 +100,20 @@ def plot_qz( A,B,C,L,P,log_qw, target=None, testing=False):
 #dkl_dA = grad(kl_div,argnum=3)
 
 def kl_div( w_samples, log_target, log_qw, params ):
-    A,B,C,L,P = params['A'],params['B'],params['C'],params['L'],params['P'],
-    z = reparam(w_samples, A,B,C,L,P)
+    z = reparam(w_samples, params)
     log_p = log_target(z)
-    log_q = log_qz(w_samples, A,B,C,L,P,log_qw)
+    log_q = log_qz(w_samples, params,log_qw)
     KL = np.mean( log_q-log_p )
     return KL
 
 dkl_dA = grad(kl_div,argnum=3)
 
 
-def grad_kl(w_samples,log_target,log_qw, A,B,C,L,P):
-    params = {'A':A,'B':B,'C':C,'L':L,'P':P}
-    #return dkl_dA(w_samples,log_target,log_qw,A,B,C,L,P)
-    return dkl_dA(w_samples,log_target,log_qw,params)
+# def grad_kl_init(w_samples,log_target,log_qw, params):
+#     return dkl_dA(w_samples,log_target,log_qw,params)
+
+def grad_kl_init( log_target,log_qw, params, w_gen, SAMPLING_SIZE):
+    def grad_kl(params,iter):
+        w_samples = w_gen(SAMPLING_SIZE)
+        return dkl_dA(w_samples,log_target,log_qw,params)
+    return grad_kl
